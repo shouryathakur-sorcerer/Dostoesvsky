@@ -625,8 +625,8 @@
     width: 100%;
     display: flex;
     flex-direction: column;
-    gap: 18px;
-    padding-bottom: 8px;
+    gap: 26px;
+    padding-bottom: 18px;
   }
 
   #welcome {
@@ -676,7 +676,7 @@
     margin: 0 auto;
     display: flex;
     align-items: flex-start;
-    gap: 14px;
+    gap: 16px;
   }
   .message.user .message-shell {
     flex-direction: row-reverse;
@@ -697,15 +697,17 @@
     position: relative;
     flex: 1;
     max-width: min(100%, 740px);
-    padding: 16px 18px 14px;
+    padding: 20px 24px 22px;
     border: 1px solid rgba(212, 196, 154, 0.88);
-    border-radius: 20px;
+    border-radius: 24px;
     background: rgba(255, 252, 247, 0.92);
     box-shadow: var(--shadow-soft);
     overflow: hidden;
   }
   .message.ai .message-card {
     flex: 1 1 auto;
+    width: min(100%, 70ch);
+    max-width: min(100%, 70ch);
     background: linear-gradient(180deg, rgba(255, 252, 245, 0.96) 0%, rgba(252, 247, 235, 0.92) 100%);
   }
   .message.ai .message-card::after {
@@ -727,50 +729,64 @@
   .message-header {
     position: relative;
     z-index: 1;
-    margin-bottom: 10px;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 18px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(212, 196, 154, 0.55);
   }
-  .message-time { color: #a9854d; }
+  .message-name {
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  .message-time {
+    color: #a9854d;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+  }
 
   .message-body {
     position: relative;
     z-index: 1;
     padding-left: 0;
     font-size: 16px;
-    line-height: 1.92;
+    line-height: 2;
   }
   .message.user .message-body {
     font-style: normal;
     color: #2d2112;
-    line-height: 1.82;
+    line-height: 1.85;
   }
   .message.user .message-body p {
     font-size: 15px;
     color: #2d2112;
     font-style: normal;
-    line-height: 1.82;
+    line-height: 1.85;
   }
   .message.ai .message-body {
-    padding-left: 18px;
+    padding-left: 20px;
+    padding-right: 4px;
   }
   .message.ai .message-body::before {
     content: '"';
     font-family: 'IM Fell English', serif;
-    font-size: 42px;
-    color: rgba(200, 134, 26, 0.18);
+    font-size: 48px;
+    color: rgba(200, 134, 26, 0.22);
     position: absolute;
-    left: 0;
-    top: -8px;
+    left: -2px;
+    top: -12px;
     line-height: 1;
     pointer-events: none;
   }
   .message-body p { margin: 0; }
-  .message-body p + p { margin-top: 1em; }
+  .message-body p + p { margin-top: 1.35em; }
 
   .message-divider {
     max-width: var(--chat-width);
-    margin: -6px auto 0;
+    margin: -10px auto 4px;
     background: linear-gradient(to right, transparent, rgba(212, 196, 154, 0.9) 25%, rgba(212, 196, 154, 0.9) 75%, transparent);
-    opacity: 0.55;
+    opacity: 0.35;
   }
 
   .rating-row {
@@ -778,8 +794,10 @@
     z-index: 1;
     flex-wrap: wrap;
     gap: 8px;
-    padding-left: 18px;
-    margin-top: 12px;
+    padding-left: 20px;
+    margin-top: 18px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(212, 196, 154, 0.38);
   }
 
   .rate-btn {
@@ -803,7 +821,8 @@
   }
 
   .ornament {
-    margin: 2px auto 10px;
+    margin: -2px auto 2px;
+    opacity: 0.38;
   }
 
   #input-area {
@@ -927,25 +946,27 @@
       font-size: 10px;
     }
     .message-card {
-      padding: 14px 14px 12px;
-      border-radius: 18px;
+      padding: 16px 16px 16px;
+      border-radius: 20px;
     }
     .message.ai .message-card,
     .message.user .message-card { max-width: 100%; }
     .message.ai .message-body {
-      padding-left: 14px;
+      padding-left: 16px;
       font-size: 16px;
-      line-height: 1.85;
+      line-height: 1.9;
     }
     .message-header {
       flex-wrap: wrap;
-      row-gap: 4px;
+      row-gap: 6px;
+      margin-bottom: 14px;
+      padding-bottom: 10px;
     }
     .message-time { margin-left: 0; }
-    .message-divider { margin-top: -2px; }
+    .message-divider { margin-top: -4px; }
     .rating-row {
       opacity: 1;
-      padding-left: 14px;
+      padding-left: 16px;
     }
 
     #input-area {
@@ -995,8 +1016,8 @@
     .message-time { width: 100%; }
     .message.user .message-time { text-align: right; }
     .message.ai .message-body::before {
-      font-size: 34px;
-      top: -6px;
+      font-size: 38px;
+      top: -8px;
     }
     .typing-card { max-width: 100%; }
     #input-footer { gap: 6px; }
