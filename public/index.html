@@ -7,7 +7,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IM+Fell+English:ital@0;1&family=IM+Fell+English+SC&family=Spectral:ital,wght@0,300;0,400;0,600;1,300;1,400;1,600&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <style>
   :root {
     --ink: #1a1108;
@@ -1091,7 +1090,7 @@
       </button>
     </div>
     <div id="input-footer">
-      <span id="char-hint">Enter to send · Shift+Enter for new line</span>
+      <span id="char-hint">Enter to send · Shift+Enter for new line · Fyodor may ask a brief follow-up first</span>
     </div>
   </div>
 </main>
@@ -1100,15 +1099,11 @@
 // ══════════════════════════════════════════════════════════════
 // CONFIG — replace with your actual values
 // ══════════════════════════════════════════════════════════════
-const SUPABASE_URL = 'https://pkzhknhbkrbtmgrnqexc.supabase.co/';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBremhrbmhia3JidG1ncm5xZXhjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0NTU1ODYsImV4cCI6MjA5MTAzMTU4Nn0.FRGWxmKJykF9PAUiI2jCdZ8_fyFp4AdDvVo6bD97w7M';
-const API_BASE = '/api/chat'; // your Vercel serverless function
+const API_BASE = '/api/chat';
 
 // ══════════════════════════════════════════════════════════════
 // INIT SUPABASE
 // ══════════════════════════════════════════════════════════════
-const { createClient } = supabase;
-const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ══════════════════════════════════════════════════════════════
 // USER ID — anonymous persistent ID
@@ -1209,6 +1204,91 @@ async function callAPI(payload) {
 // ══════════════════════════════════════════════════════════════
 // UI HELPERS
 // ══════════════════════════════════════════════════════════════
+async function loadConversations() {
+  try {
+    const { conversations: storedConversations } = await callAPI({ action: 'list-conversations' });
+    conversations = {};
+    (storedConversations || []).forEach(conversation => {
+      conversations[conversation.id] = {
+        id: conversation.id,
+        title: conversation.title || 'New dialogue',
+        updatedAt: new Date(conversation.updatedAt || conversation.createdAt || Date.now()).getTime()
+      };
+    });
+    renderSidebar();
+  } catch (error) {
+    console.error(error);
+    conversations = {};
+    renderSidebar();
+    showToast('Failed to load saved dialogues.');
+  }
+}
+
+async function loadMessages(convId) {
+  try {
+    const { messages: storedMessages } = await callAPI({
+      action: 'load-conversation',
+      conversationId: convId
+    });
+    return (storedMessages || []).map(message => ({
+      id: message.id,
+      role: message.role,
+      content: message.content,
+      ts: new Date(message.createdAt || Date.now()).getTime()
+    }));
+  } catch (error) {
+    console.error(error);
+    showToast('Failed to load that dialogue.');
+    return [];
+  }
+}
+
+async function saveMessage(convId, role, content) {
+  try {
+    const { message } = await callAPI({
+      action: 'save-message',
+      conversationId: convId,
+      role,
+      content
+    });
+    return message?.id || null;
+  } catch (error) {
+    console.error(error);
+    showToast('Message could not be saved.');
+    return null;
+  }
+}
+
+async function createConversation(id, title) {
+  return callAPI({
+    action: 'create-conversation',
+    conversationId: id,
+    title
+  });
+}
+
+async function updateConversationTitle(id, title) {
+  return callAPI({
+    action: 'update-conversation',
+    conversationId: id,
+    title
+  });
+}
+
+async function updateConversationTimestamp(id) {
+  return callAPI({
+    action: 'update-conversation',
+    conversationId: id
+  });
+}
+
+async function deleteConversationFromDB(id) {
+  return callAPI({
+    action: 'delete-conversation',
+    conversationId: id
+  });
+}
+
 function showToast(msg) {
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -1333,13 +1413,18 @@ function generateId() {
 
 async function newConversation() {
   const id = generateId();
-  await createConversation(id, 'New dialogue');
-  conversations[id] = { id, title: 'New dialogue', updatedAt: Date.now() };
-  activeConvId = id;
-  messages = [];
-  renderSidebar();
-  renderMessages();
-  closeSidebar();
+  try {
+    await createConversation(id, 'New dialogue');
+    conversations[id] = { id, title: 'New dialogue', updatedAt: Date.now() };
+    activeConvId = id;
+    messages = [];
+    renderSidebar();
+    renderMessages();
+    closeSidebar();
+  } catch (error) {
+    console.error(error);
+    showToast('Unable to start a new dialogue right now.');
+  }
 }
 
 async function selectConversation(id) {
@@ -1505,6 +1590,7 @@ async function sendMessage() {
   if (!text) return;
 
   if (!activeConvId) await newConversation();
+  if (!activeConvId) return;
 
   const userMsg = { role: 'user', content: text, ts: Date.now() };
   messages.push(userMsg);
