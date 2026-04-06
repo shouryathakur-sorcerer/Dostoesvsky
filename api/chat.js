@@ -17,6 +17,20 @@ ADDITIONAL DIALOGUE RULES:
 - Keep the exchange conversational and human. Reflect something specific the interlocutor said before moving into your answer.
 `;
 
+const ADAPTIVE_RESPONSE_PROMPT = `
+
+ADAPTIVE RESPONSE RULES:
+- Ignore any earlier instruction that every answer must be long or multi-paragraph.
+- This is a live conversation. Some replies should be short, warm, and direct.
+- Match the user's scale and energy.
+- For brief or intimate messages, answer in a compact paragraph or a few sentences.
+- For normal questions, answer in 1-2 paragraphs.
+- For explicitly deep, philosophical, or detailed requests, answer in fuller paragraphs.
+- If one thoughtful question is the best next move, ask it instead of forcing a speech.
+- Do not sound like you are delivering a lecture every turn.
+- Keep the prose natural, responsive, and personal.
+`;
+
 const BASE_SYSTEM_PROMPT = `You are Fyodor Mikhailovich Dostoevsky — the Russian novelist, philosopher, and journalist who lived from 1821 to 1881. You speak in the first person, as if you are truly Dostoevsky himself, drawing on your own life experiences, your literary works, your spiritual convictions, and your philosophical worldview.
 
 Your character and manner of speaking:
@@ -188,6 +202,81 @@ async function saveConversationMessage(userId, conversationId, role, content) {
   };
 }
 
+function getLastMessageByRole(messages, role) {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (messages[i]?.role === role) return messages[i];
+  }
+  return null;
+}
+
+function countWords(text) {
+  return String(text || '').trim().split(/\s+/).filter(Boolean).length;
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function buildTurnGuidance(messages, verbosityWeight = 1) {
+  const latestUser = getLastMessageByRole(messages, 'user');
+  const previousAssistant = [...messages].reverse().find(message => message?.role === 'assistant');
+
+  if (!latestUser) {
+    return {
+      prompt: '',
+      maxTokens: 700
+    };
+  }
+
+  const text = String(latestUser.content || '').trim();
+  const wordCount = countWords(text);
+  const lower = text.toLowerCase();
+  const asksForDepth =
+    wordCount > 70 ||
+    /(in detail|at length|deep dive|go deeper|more detail|fully explain|thoroughly|long answer|elaborate|unpack this)/i.test(text);
+  const soundsEmotional =
+    /(i feel|i'm feeling|i am feeling|hurt|lost|afraid|scared|sad|lonely|anxious|overwhelmed|confused|ashamed|tired)/i.test(text);
+  const veryShort = wordCount <= 12;
+  const directQuestion = text.endsWith('?');
+  const answeringFollowUp =
+    Boolean(previousAssistant) &&
+    /\?["')\]]*\s*$/.test(String(previousAssistant.content || '').trim()) &&
+    !directQuestion;
+
+  let prompt = '';
+  let maxTokens = 520;
+
+  if (veryShort || soundsEmotional) {
+    prompt += 'For this turn, respond briefly and naturally. Prefer one compact paragraph, or two short paragraphs at most. ';
+    maxTokens = 240;
+  } else if (asksForDepth) {
+    prompt += 'For this turn, the user is inviting depth. Give a fuller answer, but keep it conversational rather than essay-like. ';
+    maxTokens = 900;
+  } else if (directQuestion) {
+    prompt += 'For this turn, answer clearly in 1-2 paragraphs. Do not over-expand. ';
+    maxTokens = 420;
+  } else {
+    prompt += 'For this turn, treat it like natural back-and-forth conversation. Keep the answer moderate in length. ';
+    maxTokens = 380;
+  }
+
+  if (answeringFollowUp) {
+    prompt += 'The user is answering your previous question, so acknowledge what they just revealed and build from it rather than restarting the topic. ';
+  }
+
+  if (soundsEmotional) {
+    prompt += 'Lead with warmth and human recognition before analysis. ';
+  }
+
+  if (verbosityWeight > 1.25) maxTokens += 120;
+  if (verbosityWeight < 0.85) maxTokens -= 100;
+
+  return {
+    prompt: `\n\n--- RESPONSE SHAPE FOR THIS TURN ---\n${prompt.trim()}`,
+    maxTokens: clamp(maxTokens, 180, 1000)
+  };
+}
+
 async function getUserMemory(userId) {
   const { data } = await supabase
     .from('user_memory')
@@ -285,8 +374,8 @@ async function analyzeEngagement(userId, responseLength, followUpLength, rating)
 }
 
 // ── LAYER 1: Build evolved system prompt ─────────────────────────────────
-async function buildSystemPrompt(userId) {
-  let prompt = BASE_SYSTEM_PROMPT + GUIDED_DIALOGUE_PROMPT;
+async function buildSystemPrompt(userId, messages) {
+  let prompt = BASE_SYSTEM_PROMPT + GUIDED_DIALOGUE_PROMPT + ADAPTIVE_RESPONSE_PROMPT;
 
   // Inject memory fragments (Layer 2)
   const memories = await getUserMemory(userId);
@@ -330,7 +419,13 @@ async function buildSystemPrompt(userId) {
     prompt += `\n\n--- WHAT HAS NOT WORKED WITH THIS PERSON ---\nAvoid responses similar to these which they disliked:\n${badRatings.map(r => `• "${r.response_excerpt}"${r.reason ? ` (reason: ${r.reason})` : ''}`).join('\n')}`;
   }
 
-  return prompt;
+  const turnGuidance = buildTurnGuidance(messages, weights?.verbosity || 1);
+  prompt += turnGuidance.prompt;
+
+  return {
+    prompt,
+    maxTokens: turnGuidance.maxTokens
+  };
 }
 
 // ── MAIN HANDLER ──────────────────────────────────────────────────────────
@@ -378,13 +473,13 @@ export default async function handler(req, res) {
     }
     // ── ACTION: chat ──────────────────────────────────────────────────────
     if (action === 'chat') {
-      const systemPrompt = await buildSystemPrompt(userId);
-      const reply = await callClaude(messages, systemPrompt, 1000);
+      const { prompt: systemPrompt, maxTokens } = await buildSystemPrompt(userId, messages);
+      const reply = await callClaude(messages, systemPrompt, maxTokens);
 
       // Extract memory in background (don't await — non-blocking)
       extractAndStoreMemory(userId, messages).catch(console.error);
 
-      return res.status(200).json({ reply, systemPromptLength: systemPrompt.length });
+      return res.status(200).json({ reply, systemPromptLength: systemPrompt.length, maxTokens });
     }
 
     // ── ACTION: rate ──────────────────────────────────────────────────────
