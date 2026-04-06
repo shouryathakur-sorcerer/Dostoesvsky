@@ -1,0 +1,997 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Fyodor — A Conversation with Dostoevsky</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IM+Fell+English:ital@0;1&family=IM+Fell+English+SC&family=Spectral:ital,wght@0,300;0,400;0,600;1,300;1,400;1,600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<style>
+  :root {
+    --ink: #1a1108;
+    --ink-faded: #3d2f1e;
+    --ink-ghost: #6b5340;
+    --parchment: #f5edd8;
+    --parchment-dark: #e8dcc0;
+    --parchment-deeper: #d4c49a;
+    --amber: #c8861a;
+    --amber-dim: #8a5a0a;
+    --blood: #7a1c1c;
+    --gold: #b8960c;
+    --sidebar-w: 280px;
+    --panel-w: 260px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #0d0a06;
+    color: var(--ink);
+    font-family: 'Spectral', Georgia, serif;
+    font-size: 16px;
+    line-height: 1.75;
+    min-height: 100vh;
+    display: flex;
+    overflow: hidden;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 1000;
+    opacity: 0.6;
+  }
+
+  /* ════ SIDEBAR ════ */
+  #sidebar {
+    width: var(--sidebar-w);
+    min-width: var(--sidebar-w);
+    background: #0f0b07;
+    border-right: 1px solid #2a1f10;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 10;
+  }
+
+  #sidebar-header {
+    padding: 28px 20px 16px;
+    border-bottom: 1px solid #1e1508;
+  }
+
+  #sidebar-header h1 {
+    font-family: 'IM Fell English SC', serif;
+    font-size: 22px;
+    color: var(--amber);
+    letter-spacing: 0.04em;
+    line-height: 1.2;
+    text-shadow: 0 0 30px rgba(200,134,26,0.4);
+  }
+
+  #sidebar-header p {
+    font-family: 'Spectral', serif;
+    font-style: italic;
+    font-size: 11px;
+    color: #5a4228;
+    margin-top: 6px;
+    letter-spacing: 0.03em;
+  }
+
+  #new-chat-btn {
+    margin: 14px 16px;
+    padding: 9px 14px;
+    background: transparent;
+    border: 1px solid #2e2010;
+    color: #7a5c3a;
+    font-family: 'Spectral', serif;
+    font-size: 12px;
+    font-style: italic;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+    width: calc(100% - 32px);
+    text-align: left;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  #new-chat-btn:hover { background: #1a1008; border-color: #4a3020; color: var(--amber); }
+  #new-chat-btn .plus { font-style: normal; font-size: 16px; color: #4a3020; line-height: 1; }
+
+  #conversations-label {
+    padding: 10px 20px 6px;
+    font-family: 'IM Fell English SC', serif;
+    font-size: 9px;
+    letter-spacing: 0.15em;
+    color: #3a2a15;
+    text-transform: uppercase;
+  }
+
+  #conversations-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px 10px 20px;
+    scrollbar-width: thin;
+    scrollbar-color: #2a1a08 transparent;
+  }
+  #conversations-list::-webkit-scrollbar { width: 3px; }
+  #conversations-list::-webkit-scrollbar-thumb { background: #2a1a08; }
+
+  .conv-item {
+    padding: 9px 12px;
+    border-radius: 3px;
+    cursor: pointer;
+    margin-bottom: 2px;
+    transition: background 0.2s;
+    border-left: 2px solid transparent;
+    position: relative;
+  }
+  .conv-item:hover { background: #1a1008; }
+  .conv-item.active { background: #1e1208; border-left-color: var(--amber-dim); }
+  .conv-title { font-size: 12px; color: #6b4e2e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-style: italic; line-height: 1.4; }
+  .conv-item.active .conv-title { color: #9a7040; }
+  .conv-date { font-size: 10px; color: #3a2810; margin-top: 2px; font-family: 'IM Fell English SC', serif; }
+  .conv-delete { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #3a2810; cursor: pointer; font-size: 13px; opacity: 0; transition: opacity 0.2s, color 0.2s; padding: 2px 4px; }
+  .conv-item:hover .conv-delete { opacity: 1; }
+  .conv-delete:hover { color: var(--blood); }
+
+  #sidebar-footer {
+    padding: 14px 20px;
+    border-top: 1px solid #1e1508;
+    font-size: 10px;
+    color: #3a2810;
+    font-family: 'IM Fell English SC', serif;
+    letter-spacing: 0.06em;
+    text-align: center;
+    line-height: 1.8;
+  }
+
+  /* ════ MAIN ════ */
+  #main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    background: var(--parchment);
+    background-image:
+      radial-gradient(ellipse at 15% 20%, rgba(200,134,26,0.06) 0%, transparent 50%),
+      radial-gradient(ellipse at 85% 80%, rgba(122,28,28,0.05) 0%, transparent 50%);
+    position: relative;
+    overflow: hidden;
+    min-width: 0;
+  }
+
+  /* ── TOP BAR ── */
+  #topbar {
+    padding: 14px 28px;
+    border-bottom: 1px solid var(--parchment-deeper);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(245,237,216,0.9);
+    backdrop-filter: blur(2px);
+    position: relative;
+    z-index: 5;
+    flex-shrink: 0;
+    gap: 10px;
+  }
+
+  #topbar-title { font-family: 'IM Fell English SC', serif; font-size: 13px; letter-spacing: 0.1em; color: var(--ink-ghost); }
+
+  #topbar-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+
+  .topbar-btn {
+    font-family: 'IM Fell English SC', serif;
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    color: #9a7040;
+    border: 1px solid var(--parchment-deeper);
+    padding: 4px 10px;
+    border-radius: 1px;
+    background: none;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+  .topbar-btn:hover { border-color: var(--amber-dim); color: var(--amber-dim); }
+  .topbar-btn.active { background: rgba(200,134,26,0.1); border-color: var(--amber-dim); color: var(--amber-dim); }
+
+  /* ── MEMORY PANEL ── */
+  #memory-panel {
+    width: var(--panel-w);
+    min-width: var(--panel-w);
+    background: rgba(240,230,205,0.95);
+    border-left: 1px solid var(--parchment-deeper);
+    display: none;
+    flex-direction: column;
+    height: 100vh;
+    overflow-y: auto;
+    flex-shrink: 0;
+    padding: 20px 16px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--parchment-deeper) transparent;
+    animation: slideIn 0.3s ease;
+  }
+  #memory-panel.open { display: flex; }
+
+  @keyframes slideIn {
+    from { transform: translateX(20px); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+  }
+
+  .panel-heading {
+    font-family: 'IM Fell English SC', serif;
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    color: var(--ink-ghost);
+    text-transform: uppercase;
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--parchment-deeper);
+  }
+
+  .panel-section { margin-bottom: 22px; }
+
+  .memory-fragment {
+    font-size: 12px;
+    color: var(--ink-faded);
+    font-style: italic;
+    line-height: 1.6;
+    padding: 7px 10px;
+    border-left: 2px solid var(--parchment-deeper);
+    margin-bottom: 6px;
+    background: rgba(255,255,255,0.3);
+  }
+
+  .style-bar-row { margin-bottom: 8px; }
+  .style-bar-label { font-size: 10px; color: var(--ink-ghost); font-family: 'IM Fell English SC', serif; letter-spacing: 0.05em; display: flex; justify-content: space-between; margin-bottom: 3px; }
+  .style-bar-track { height: 3px; background: var(--parchment-deeper); border-radius: 2px; }
+  .style-bar-fill { height: 100%; background: var(--amber-dim); border-radius: 2px; transition: width 0.5s ease; }
+
+  .panel-note { font-size: 11px; color: #9a7040; font-style: italic; line-height: 1.6; }
+
+  .panel-clear-btn {
+    margin-top: 8px;
+    font-size: 10px;
+    font-family: 'IM Fell English SC', serif;
+    color: #8a6840;
+    background: none;
+    border: 1px solid var(--parchment-deeper);
+    cursor: pointer;
+    padding: 5px 10px;
+    transition: all 0.2s;
+    width: 100%;
+    letter-spacing: 0.06em;
+  }
+  .panel-clear-btn:hover { color: var(--blood); border-color: var(--blood); }
+
+  /* ── CHAT ── */
+  #chat-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 40px 50px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--parchment-deeper) transparent;
+  }
+  #chat-container::-webkit-scrollbar { width: 4px; }
+  #chat-container::-webkit-scrollbar-thumb { background: var(--parchment-deeper); }
+
+  /* welcome */
+  #welcome {
+    text-align: center;
+    padding: 50px 40px;
+    max-width: 580px;
+    margin: 0 auto;
+  }
+  #welcome-portrait {
+    width: 88px; height: 88px;
+    margin: 0 auto 24px;
+    border: 1px solid var(--parchment-deeper);
+    border-radius: 50%;
+    background: radial-gradient(ellipse, #d4c49a, #c4b08a);
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'IM Fell English SC', serif;
+    font-size: 36px; color: var(--ink-ghost);
+    box-shadow: 0 0 40px rgba(200,134,26,0.2);
+  }
+  #welcome h2 { font-family: 'IM Fell English SC', serif; font-size: 30px; color: var(--ink); letter-spacing: 0.04em; margin-bottom: 12px; }
+  #welcome-quote { font-family: 'IM Fell English', serif; font-style: italic; font-size: 14px; color: var(--ink-ghost); line-height: 1.8; border-left: 2px solid var(--parchment-deeper); padding-left: 16px; text-align: left; margin: 18px 0; }
+  #welcome p.intro { font-size: 13px; color: #8a6a40; line-height: 1.9; margin-top: 14px; }
+  .prompt-suggestions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 24px; }
+  .suggestion-chip { padding: 11px 14px; border: 1px solid var(--parchment-deeper); background: rgba(245,237,216,0.5); font-family: 'Spectral', serif; font-style: italic; font-size: 12px; color: var(--ink-ghost); cursor: pointer; text-align: left; transition: all 0.25s; line-height: 1.5; border-radius: 1px; }
+  .suggestion-chip:hover { background: rgba(200,134,26,0.08); border-color: var(--amber); color: var(--ink-faded); }
+
+  /* messages */
+  .message { margin-bottom: 32px; animation: fadeUp 0.4s ease; max-width: 720px; margin-left: auto; margin-right: auto; }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+  .message-header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .avatar { width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-family: 'IM Fell English SC', serif; font-size: 11px; flex-shrink: 0; border: 1px solid; }
+  .avatar.user { background: var(--parchment-dark); border-color: var(--parchment-deeper); color: var(--ink-ghost); }
+  .avatar.ai { background: #1a1008; border-color: #3a2810; color: var(--amber); box-shadow: 0 0 14px rgba(200,134,26,0.2); }
+  .message-name { font-family: 'IM Fell English SC', serif; font-size: 11px; letter-spacing: 0.08em; color: var(--ink-ghost); }
+  .message-time { font-size: 10px; color: #b09060; margin-left: auto; font-family: 'IM Fell English SC', serif; }
+  .message-body { padding-left: 40px; }
+  .message.user .message-body p { font-size: 15px; color: var(--ink-faded); font-style: italic; }
+  .message.ai .message-body { font-size: 15px; color: var(--ink); line-height: 1.9; position: relative; }
+  .message.ai .message-body::before { content: '\201C'; font-family: 'IM Fell English', serif; font-size: 56px; color: rgba(200,134,26,0.15); position: absolute; left: -6px; top: -14px; line-height: 1; pointer-events: none; }
+  .message.ai .message-body p + p { margin-top: 1em; }
+  .message-divider { height: 1px; background: linear-gradient(to right, transparent, var(--parchment-deeper) 30%, var(--parchment-deeper) 70%, transparent); margin: 6px 0 0 40px; opacity: 0.5; }
+
+  /* rating row */
+  .rating-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding-left: 40px;
+    margin-top: 6px;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  .message:hover .rating-row { opacity: 1; }
+  .rating-row.rated { opacity: 1; }
+
+  .rate-btn {
+    background: none;
+    border: 1px solid transparent;
+    font-size: 13px;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 2px;
+    color: #b09060;
+    transition: all 0.2s;
+    line-height: 1;
+  }
+  .rate-btn:hover { border-color: var(--parchment-deeper); }
+  .rate-btn.selected-up { color: #5a8a3a; border-color: #5a8a3a; background: rgba(90,138,58,0.08); }
+  .rate-btn.selected-down { color: var(--blood); border-color: var(--blood); background: rgba(122,28,28,0.08); }
+  .rate-label { font-size: 10px; color: #b09060; font-family: 'IM Fell English SC', serif; }
+
+  /* typing */
+  .typing-indicator { display: flex; gap: 5px; padding-left: 40px; align-items: center; height: 24px; }
+  .typing-dot { width: 5px; height: 5px; background: var(--amber-dim); border-radius: 50%; animation: pulse 1.3s infinite; }
+  .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+  .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes pulse { 0%,80%,100% { opacity:0.2; transform:scale(0.8); } 40% { opacity:1; transform:scale(1); } }
+
+  .ornament { text-align: center; color: var(--parchment-deeper); font-family: 'IM Fell English', serif; font-size: 18px; margin: 8px 0 28px; letter-spacing: 0.3em; opacity: 0.6; }
+
+  /* ── INPUT ── */
+  #input-area {
+    padding: 14px 36px 20px;
+    border-top: 1px solid var(--parchment-deeper);
+    background: rgba(245,237,216,0.92);
+    backdrop-filter: blur(4px);
+    flex-shrink: 0;
+  }
+  #input-wrapper { max-width: 720px; margin: 0 auto; position: relative; }
+  #message-input {
+    width: 100%;
+    padding: 12px 50px 12px 16px;
+    background: #faf5e8;
+    border: 1px solid var(--parchment-deeper);
+    border-radius: 2px;
+    font-family: 'Spectral', serif;
+    font-size: 15px;
+    color: var(--ink-faded);
+    resize: none;
+    min-height: 50px;
+    max-height: 180px;
+    overflow-y: auto;
+    line-height: 1.6;
+    outline: none;
+    transition: border-color 0.25s, box-shadow 0.25s;
+    box-shadow: inset 0 1px 4px rgba(0,0,0,0.05);
+  }
+  #message-input:focus { border-color: var(--amber-dim); box-shadow: inset 0 1px 4px rgba(0,0,0,0.05), 0 0 0 3px rgba(200,134,26,0.08); }
+  #message-input::placeholder { color: #c0a870; font-style: italic; }
+  #send-btn { position: absolute; right: 9px; bottom: 9px; width: 32px; height: 32px; background: var(--ink); border: none; border-radius: 1px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s; }
+  #send-btn:hover { background: var(--amber-dim); }
+  #send-btn:disabled { background: #c0a870; cursor: not-allowed; }
+  #send-btn svg { width: 13px; height: 13px; fill: var(--parchment); }
+
+  #input-footer { max-width: 720px; margin: 7px auto 0; display: flex; justify-content: space-between; align-items: center; }
+  #char-hint { font-size: 10px; font-family: 'IM Fell English SC', serif; color: #b09060; letter-spacing: 0.06em; }
+
+  /* status dot */
+  #status-dot { width: 6px; height: 6px; border-radius: 50%; background: #5a8a3a; display: inline-block; margin-right: 5px; }
+  #status-text { font-size: 10px; font-family: 'IM Fell English SC', serif; color: #9a7040; letter-spacing: 0.05em; }
+
+  /* toast */
+  #toast {
+    position: fixed;
+    bottom: 90px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: var(--ink);
+    color: var(--parchment);
+    padding: 8px 18px;
+    font-family: 'IM Fell English SC', serif;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    border-radius: 2px;
+    opacity: 0;
+    transition: all 0.3s ease;
+    pointer-events: none;
+    z-index: 500;
+    white-space: nowrap;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* mobile */
+  #sidebar-toggle { display: none; position: fixed; top: 14px; left: 14px; z-index: 100; background: #0f0b07; border: 1px solid #2a1f10; color: var(--amber); font-size: 16px; width: 36px; height: 36px; cursor: pointer; align-items: center; justify-content: center; }
+
+  @media (max-width: 800px) {
+    #sidebar { position: fixed; left: -100%; transition: left 0.3s ease; z-index: 50; }
+    #sidebar.open { left: 0; }
+    #sidebar-toggle { display: flex; }
+    #chat-container { padding: 20px 16px; }
+    #input-area { padding: 10px 14px 16px; }
+    #topbar { padding: 12px 14px; padding-left: 54px; }
+    .prompt-suggestions { grid-template-columns: 1fr; }
+    #memory-panel { position: fixed; right: 0; top: 0; height: 100vh; z-index: 40; }
+  }
+</style>
+</head>
+<body>
+
+<button id="sidebar-toggle" onclick="toggleSidebar()">☰</button>
+<div id="toast"></div>
+
+<!-- SIDEBAR -->
+<aside id="sidebar">
+  <div id="sidebar-header">
+    <h1>Fyodor</h1>
+    <p>Mikhailovich Dostoevsky · 1821–1881</p>
+  </div>
+  <button id="new-chat-btn" onclick="newConversation()">
+    <span class="plus">+</span> Begin new dialogue
+  </button>
+  <div id="conversations-label">Past Dialogues</div>
+  <div id="conversations-list"></div>
+  <div id="sidebar-footer">Ф.М. Достоевский<br>Saint Petersburg · 1868</div>
+</aside>
+
+<!-- MAIN -->
+<main id="main">
+  <div id="topbar">
+    <div id="topbar-title">A Dialogue with the Author</div>
+    <div id="topbar-right">
+      <span><span id="status-dot"></span><span id="status-text">Connected</span></span>
+      <button class="topbar-btn" id="memory-btn" onclick="toggleMemoryPanel()">⌁ Memory</button>
+    </div>
+  </div>
+
+  <div style="display:flex; flex:1; overflow:hidden;">
+    <div id="chat-container">
+      <div id="welcome">
+        <div id="welcome-portrait">Ф</div>
+        <h2>Fyodor Dostoevsky</h2>
+        <div id="welcome-quote">"Pain and suffering are always inevitable for a large intelligence and a deep heart."</div>
+        <p class="intro">I have lived through poverty, imprisonment, exile, epilepsy, and the deaths of those I loved. Ask me anything — of suffering, of God, of man's darkest nature, of love, of freedom. I will speak as plainly as I know how.</p>
+        <div class="prompt-suggestions">
+          <button class="suggestion-chip" onclick="sendSuggestion('Do you believe in God, Dostoevsky?')">Do you believe in God?</button>
+          <button class="suggestion-chip" onclick="sendSuggestion('What do you make of the suffering of innocent children?')">The suffering of innocent children</button>
+          <button class="suggestion-chip" onclick="sendSuggestion('Is man fundamentally good or evil by nature?')">Is man fundamentally good or evil?</button>
+          <button class="suggestion-chip" onclick="sendSuggestion('What is the meaning of freedom, truly?')">What is the meaning of freedom?</button>
+          <button class="suggestion-chip" onclick="sendSuggestion('Tell me about your time in Siberia.')">Your time in Siberia</button>
+          <button class="suggestion-chip" onclick="sendSuggestion('What is the underground man, and do you pity him?')">The Underground Man — do you pity him?</button>
+        </div>
+      </div>
+      <div id="messages"></div>
+    </div>
+
+    <!-- MEMORY PANEL -->
+    <div id="memory-panel">
+      <div class="panel-section">
+        <div class="panel-heading">What He Remembers of You</div>
+        <div id="memory-fragments-list"><p class="panel-note">No memories yet. Begin a dialogue.</p></div>
+      </div>
+      <div class="panel-section">
+        <div class="panel-heading">His Style — Adapted to You</div>
+        <div id="style-bars"></div>
+        <p class="panel-note" id="style-note" style="margin-top:8px;">Style adapts after a few exchanges.</p>
+      </div>
+      <div class="panel-section">
+        <div class="panel-heading">Actions</div>
+        <button class="panel-clear-btn" onclick="clearMemory()">Erase all memory of me</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="input-area">
+    <div id="input-wrapper">
+      <textarea
+        id="message-input"
+        placeholder="Address Fyodor Mikhailovich…"
+        rows="1"
+        onkeydown="handleKey(event)"
+        oninput="autoResize(this)"
+      ></textarea>
+      <button id="send-btn" onclick="sendMessage()">
+        <svg viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg>
+      </button>
+    </div>
+    <div id="input-footer">
+      <span id="char-hint">Enter to send · Shift+Enter for new line</span>
+    </div>
+  </div>
+</main>
+
+<script>
+// ══════════════════════════════════════════════════════════════
+// CONFIG — replace with your actual values
+// ══════════════════════════════════════════════════════════════
+const SUPABASE_URL = 'https://pkzhknhbkrbtmgrnqexc.supabase.co/';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBremhrbmhia3JidG1ncm5xZXhjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0NTU1ODYsImV4cCI6MjA5MTAzMTU4Nn0.FRGWxmKJykF9PAUiI2jCdZ8_fyFp4AdDvVo6bD97w7M';
+const API_BASE = '/api/chat'; // your Vercel serverless function
+
+// ══════════════════════════════════════════════════════════════
+// INIT SUPABASE
+// ══════════════════════════════════════════════════════════════
+const { createClient } = supabase;
+const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// ══════════════════════════════════════════════════════════════
+// USER ID — anonymous persistent ID
+// ══════════════════════════════════════════════════════════════
+function getUserId() {
+  let id = localStorage.getItem('fyodor_user_id');
+  if (!id) {
+    id = 'anon_' + Date.now() + '_' + Math.random().toString(36).slice(2, 9);
+    localStorage.setItem('fyodor_user_id', id);
+  }
+  return id;
+}
+const USER_ID = getUserId();
+
+// ══════════════════════════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════════════════════════
+let conversations = {};   // id → { id, title, updatedAt }
+let activeConvId = null;
+let messages = [];        // current conversation messages
+let memoryPanelOpen = false;
+let lastResponseLength = 0;
+
+// ══════════════════════════════════════════════════════════════
+// SUPABASE HELPERS
+// ══════════════════════════════════════════════════════════════
+async function loadConversations() {
+  const { data, error } = await db
+    .from('conversations')
+    .select('id, title, updated_at, created_at')
+    .eq('user_id', USER_ID)
+    .order('updated_at', { ascending: false });
+  if (error) { console.error(error); return; }
+  conversations = {};
+  (data || []).forEach(c => {
+    conversations[c.id] = { id: c.id, title: c.title, updatedAt: new Date(c.updated_at).getTime() };
+  });
+  renderSidebar();
+}
+
+async function loadMessages(convId) {
+  const { data, error } = await db
+    .from('messages')
+    .select('id, role, content, created_at')
+    .eq('conversation_id', convId)
+    .order('created_at', { ascending: true });
+  if (error) { console.error(error); return []; }
+  return (data || []).map(m => ({
+    id: m.id,
+    role: m.role,
+    content: m.content,
+    ts: new Date(m.created_at).getTime()
+  }));
+}
+
+async function saveMessage(convId, role, content) {
+  const { data, error } = await db
+    .from('messages')
+    .insert({ conversation_id: convId, user_id: USER_ID, role, content })
+    .select('id')
+    .single();
+  if (error) { console.error(error); return null; }
+  return data.id;
+}
+
+async function createConversation(id, title) {
+  await db.from('conversations').insert({ id, user_id: USER_ID, title });
+}
+
+async function updateConversationTitle(id, title) {
+  await db.from('conversations').update({ title, updated_at: new Date().toISOString() }).eq('id', id);
+}
+
+async function updateConversationTimestamp(id) {
+  await db.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', id);
+}
+
+async function deleteConversationFromDB(id) {
+  await db.from('conversations').delete().eq('id', id);
+}
+
+// ══════════════════════════════════════════════════════════════
+// API CALL
+// ══════════════════════════════════════════════════════════════
+async function callAPI(payload) {
+  const res = await fetch(API_BASE, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...payload, userId: USER_ID })
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+// ══════════════════════════════════════════════════════════════
+// UI HELPERS
+// ══════════════════════════════════════════════════════════════
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2600);
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function formatTime(ts) {
+  return new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatDate(ts) {
+  return new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 180) + 'px';
+}
+
+function scrollToBottom() {
+  const c = document.getElementById('chat-container');
+  setTimeout(() => c.scrollTo({ top: c.scrollHeight, behavior: 'smooth' }), 60);
+}
+
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+}
+
+// ══════════════════════════════════════════════════════════════
+// SIDEBAR
+// ══════════════════════════════════════════════════════════════
+function renderSidebar() {
+  const list = document.getElementById('conversations-list');
+  const ids = Object.keys(conversations).sort((a, b) => conversations[b].updatedAt - conversations[a].updatedAt);
+
+  if (!ids.length) {
+    list.innerHTML = '<div style="padding:16px 14px;font-size:11px;color:#3a2810;font-style:italic;font-family:Spectral,serif;">No past dialogues yet.</div>';
+    return;
+  }
+  list.innerHTML = ids.map(id => {
+    const c = conversations[id];
+    const active = id === activeConvId;
+    return `<div class="conv-item ${active ? 'active' : ''}" onclick="selectConversation('${id}')">
+      <div class="conv-title">${escapeHtml(c.title)}</div>
+      <div class="conv-date">${formatDate(c.updatedAt)}</div>
+      <button class="conv-delete" onclick="deleteConversation('${id}',event)">✕</button>
+    </div>`;
+  }).join('');
+}
+
+// ══════════════════════════════════════════════════════════════
+// CONVERSATIONS
+// ══════════════════════════════════════════════════════════════
+function generateId() {
+  return 'conv_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+}
+
+async function newConversation() {
+  const id = generateId();
+  await createConversation(id, 'New dialogue');
+  conversations[id] = { id, title: 'New dialogue', updatedAt: Date.now() };
+  activeConvId = id;
+  messages = [];
+  renderSidebar();
+  renderMessages();
+  closeSidebar();
+}
+
+async function selectConversation(id) {
+  activeConvId = id;
+  messages = await loadMessages(id);
+  renderSidebar();
+  renderMessages();
+  closeSidebar();
+}
+
+async function deleteConversation(id, e) {
+  e.stopPropagation();
+  if (!confirm('Consign this dialogue to the fire?')) return;
+  await deleteConversationFromDB(id);
+  delete conversations[id];
+  if (activeConvId === id) {
+    const remaining = Object.keys(conversations);
+    activeConvId = remaining.length ? remaining[0] : null;
+    messages = activeConvId ? await loadMessages(activeConvId) : [];
+  }
+  renderSidebar();
+  renderMessages();
+}
+
+// ══════════════════════════════════════════════════════════════
+// MESSAGES RENDERING
+// ══════════════════════════════════════════════════════════════
+function renderMessages() {
+  const container = document.getElementById('messages');
+  const welcome = document.getElementById('welcome');
+
+  if (!messages.length) {
+    container.innerHTML = '';
+    welcome.style.display = 'block';
+    return;
+  }
+
+  welcome.style.display = 'none';
+
+  container.innerHTML = messages.map((m, i) => {
+    const isUser = m.role === 'user';
+    const time = m.ts ? formatTime(m.ts) : '';
+    const bodyHtml = isUser
+      ? `<p>${escapeHtml(m.content)}</p>`
+      : m.content.split('\n\n').map(p => p.trim()).filter(Boolean).map(p => `<p>${escapeHtml(p)}</p>`).join('');
+
+    const ratingRow = !isUser ? `
+      <div class="rating-row" id="rating-${m.id}">
+        <button class="rate-btn" onclick="rateMessage('${m.id}', 1, '${escapeHtml(m.content.slice(0,80))}')" title="Good response">↑</button>
+        <button class="rate-btn" onclick="rateMessage('${m.id}', -1, '${escapeHtml(m.content.slice(0,80))}')" title="Poor response">↓</button>
+        <span class="rate-label">Rate this response</span>
+      </div>` : '';
+
+    return `<div class="message ${isUser ? 'user' : 'ai'}" id="msg-${m.id || i}">
+      <div class="message-header">
+        <div class="avatar ${isUser ? 'user' : 'ai'}">${isUser ? 'You' : 'Ф'}</div>
+        <span class="message-name">${isUser ? 'The Interlocutor' : 'Fyodor Dostoevsky'}</span>
+        <span class="message-time">${time}</span>
+      </div>
+      <div class="message-body">${bodyHtml}</div>
+      ${ratingRow}
+      ${i < messages.length - 1 ? '<div class="message-divider"></div>' : ''}
+    </div>`;
+  }).join('');
+
+  if (messages.length) {
+    const orn = document.createElement('div');
+    orn.className = 'ornament';
+    orn.innerHTML = '⁂';
+    container.appendChild(orn);
+  }
+
+  scrollToBottom();
+}
+
+function showTyping() {
+  document.getElementById('welcome').style.display = 'none';
+  const container = document.getElementById('messages');
+  const div = document.createElement('div');
+  div.id = 'typing-msg';
+  div.className = 'message ai';
+  div.innerHTML = `<div class="message-header"><div class="avatar ai">Ф</div><span class="message-name">Fyodor Dostoevsky</span></div>
+    <div class="typing-indicator"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div>`;
+  container.appendChild(div);
+  scrollToBottom();
+}
+function removeTyping() {
+  const t = document.getElementById('typing-msg');
+  if (t) t.remove();
+}
+
+// ══════════════════════════════════════════════════════════════
+// SEND MESSAGE
+// ══════════════════════════════════════════════════════════════
+async function sendMessage() {
+  const input = document.getElementById('message-input');
+  const text = input.value.trim();
+  if (!text) return;
+
+  if (!activeConvId) await newConversation();
+
+  const userMsg = { role: 'user', content: text, ts: Date.now() };
+  messages.push(userMsg);
+
+  // Auto-title from first user message
+  if (messages.filter(m => m.role === 'user').length === 1) {
+    const title = text.length > 52 ? text.slice(0, 52) + '…' : text;
+    conversations[activeConvId].title = title;
+    await updateConversationTitle(activeConvId, title);
+    renderSidebar();
+  }
+
+  // Save user message to DB
+  const savedId = await saveMessage(activeConvId, 'user', text);
+  if (savedId) userMsg.id = savedId;
+
+  renderMessages();
+  input.value = '';
+  input.style.height = '';
+  document.getElementById('send-btn').disabled = true;
+  showTyping();
+
+  try {
+    const apiMessages = messages.slice(-30).map(m => ({ role: m.role, content: m.content }));
+    const { reply } = await callAPI({ action: 'chat', messages: apiMessages, conversationId: activeConvId });
+
+    lastResponseLength = reply.length;
+    removeTyping();
+
+    const aiMsgId = await saveMessage(activeConvId, 'assistant', reply);
+    const aiMsg = { role: 'assistant', content: reply, ts: Date.now(), id: aiMsgId };
+    messages.push(aiMsg);
+    await updateConversationTimestamp(activeConvId);
+    conversations[activeConvId].updatedAt = Date.now();
+
+    renderMessages();
+    renderSidebar();
+
+    // Refresh memory panel if open
+    if (memoryPanelOpen) setTimeout(loadMemoryPanel, 2000);
+
+  } catch(err) {
+    removeTyping();
+    const errContent = `The wire between us has gone silent, my friend. A technical failure: ${err.message}. Try again in a moment.`;
+    const errId = await saveMessage(activeConvId, 'assistant', errContent);
+    messages.push({ role: 'assistant', content: errContent, ts: Date.now(), id: errId });
+    renderMessages();
+  } finally {
+    document.getElementById('send-btn').disabled = false;
+    input.focus();
+  }
+}
+
+function sendSuggestion(text) {
+  document.getElementById('message-input').value = text;
+  sendMessage();
+}
+
+function handleKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+}
+
+// ══════════════════════════════════════════════════════════════
+// LAYER 1: RATING
+// ══════════════════════════════════════════════════════════════
+async function rateMessage(messageId, rating, excerpt) {
+  // Determine follow-up length (next user message after this, if any)
+  const msgIndex = messages.findIndex(m => m.id === messageId);
+  const nextUser = messages.slice(msgIndex + 1).find(m => m.role === 'user');
+  const followUpLength = nextUser ? nextUser.content.length : 0;
+
+  try {
+    await callAPI({
+      action: 'rate',
+      messageId,
+      conversationId: activeConvId,
+      rating,
+      responseExcerpt: excerpt,
+      followUpLength
+    });
+
+    // Update UI
+    const row = document.getElementById(`rating-${messageId}`);
+    if (row) {
+      row.classList.add('rated');
+      row.innerHTML = `
+        <span class="rate-btn ${rating === 1 ? 'selected-up' : 'selected-down'}">${rating === 1 ? '↑' : '↓'}</span>
+        <span class="rate-label">${rating === 1 ? 'He will remember what works.' : 'He will learn from this.'}</span>
+      `;
+    }
+    showToast(rating === 1 ? 'Dostoevsky notes what moves you.' : 'He reflects on what fell flat.');
+  } catch(e) {
+    showToast('Rating failed — try again.');
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// MEMORY PANEL (Layers 2 + 3)
+// ══════════════════════════════════════════════════════════════
+function toggleMemoryPanel() {
+  memoryPanelOpen = !memoryPanelOpen;
+  const panel = document.getElementById('memory-panel');
+  const btn = document.getElementById('memory-btn');
+  panel.classList.toggle('open', memoryPanelOpen);
+  btn.classList.toggle('active', memoryPanelOpen);
+  if (memoryPanelOpen) loadMemoryPanel();
+}
+
+async function loadMemoryPanel() {
+  try {
+    const { memories, weights } = await callAPI({ action: 'get-memory' });
+
+    // Fragments
+    const fragEl = document.getElementById('memory-fragments-list');
+    if (memories.length) {
+      fragEl.innerHTML = memories.map(f => `<div class="memory-fragment">${escapeHtml(f)}</div>`).join('');
+    } else {
+      fragEl.innerHTML = '<p class="panel-note">No memories yet. Converse more.</p>';
+    }
+
+    // Style bars
+    const barsEl = document.getElementById('style-bars');
+    const noteEl = document.getElementById('style-note');
+    if (weights && weights.engagement_samples > 0) {
+      const dims = [
+        { key: 'verbosity', label: 'Verbosity' },
+        { key: 'theological_depth', label: 'Theological depth' },
+        { key: 'literary_references', label: 'Literary references' },
+        { key: 'personal_anecdotes', label: 'Personal anecdotes' },
+        { key: 'philosophical_intensity', label: 'Philosophical intensity' }
+      ];
+      barsEl.innerHTML = dims.map(d => {
+        const val = weights[d.key] || 1.0;
+        const pct = Math.round((val / 2.0) * 100);
+        return `<div class="style-bar-row">
+          <div class="style-bar-label"><span>${d.label}</span><span>${val.toFixed(2)}</span></div>
+          <div class="style-bar-track"><div class="style-bar-fill" style="width:${pct}%"></div></div>
+        </div>`;
+      }).join('');
+      noteEl.textContent = `Adapted over ${weights.engagement_samples} exchange${weights.engagement_samples === 1 ? '' : 's'}.`;
+    } else {
+      barsEl.innerHTML = '';
+      noteEl.textContent = 'Style adapts after a few exchanges.';
+    }
+  } catch(e) {
+    console.error('Memory panel error:', e);
+  }
+}
+
+async function clearMemory() {
+  if (!confirm('Erase everything Dostoevsky knows of you — are you certain?')) return;
+  try {
+    await callAPI({ action: 'clear-memory' });
+    showToast('Memory erased. You are a stranger to him again.');
+    loadMemoryPanel();
+  } catch(e) {
+    showToast('Failed to clear memory.');
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════════════════════
+async function init() {
+  await loadConversations();
+
+  const ids = Object.keys(conversations);
+  if (ids.length) {
+    activeConvId = ids.sort((a, b) => conversations[b].updatedAt - conversations[a].updatedAt)[0];
+    messages = await loadMessages(activeConvId);
+    renderSidebar();
+    renderMessages();
+  } else {
+    document.getElementById('welcome').style.display = 'block';
+  }
+}
+
+init();
+</script>
+</body>
+</html>

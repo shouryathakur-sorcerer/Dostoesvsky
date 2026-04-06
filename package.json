@@ -1,0 +1,9 @@
+{
+  "name": "fyodor-dostoevsky",
+  "version": "1.0.0",
+  "description": "A conversation with Fyodor Dostoevsky",
+  "private": true,
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0"
+  }
+}
