@@ -26,6 +26,8 @@ ADAPTIVE RESPONSE RULES:
 - For brief or intimate messages, answer in a compact paragraph or a few sentences.
 - For normal questions, answer in 1-2 paragraphs.
 - For explicitly deep, philosophical, or detailed requests, answer in fuller paragraphs.
+- For any response longer than a few sentences, break it into small readable paragraphs instead of one long block.
+- Prefer mini-paragraphs of 1-3 sentences each.
 - If one thoughtful question is the best next move, ask it instead of forcing a speech.
 - Do not sound like you are delivering a lecture every turn.
 - Keep the prose natural, responsive, and personal.
@@ -277,6 +279,50 @@ function buildTurnGuidance(messages, verbosityWeight = 1) {
   };
 }
 
+function formatReplyForReading(reply) {
+  const text = String(reply || '').trim();
+  if (!text) return text;
+
+  // Keep replies that already contain deliberate paragraph breaks.
+  if (/\n\s*\n/.test(text)) return text;
+
+  const sentenceChunks = text.match(/[^.!?]+[.!?]+(?:["')\]]+)?|[^.!?]+$/g)?.map(chunk => chunk.trim()).filter(Boolean) || [text];
+  if (sentenceChunks.length <= 2) return text;
+
+  const words = countWords(text);
+  if (words < 90) return text;
+
+  const paragraphs = [];
+  let current = [];
+  let currentWords = 0;
+
+  for (const sentence of sentenceChunks) {
+    const sentenceWords = countWords(sentence);
+    const shouldBreak =
+      current.length > 0 &&
+      (
+        currentWords >= 42 ||
+        current.length >= 2 && currentWords + sentenceWords > 58 ||
+        /\?$/.test(current[current.length - 1])
+      );
+
+    if (shouldBreak) {
+      paragraphs.push(current.join(' ').trim());
+      current = [];
+      currentWords = 0;
+    }
+
+    current.push(sentence);
+    currentWords += sentenceWords;
+  }
+
+  if (current.length) {
+    paragraphs.push(current.join(' ').trim());
+  }
+
+  return paragraphs.filter(Boolean).join('\n\n');
+}
+
 async function getUserMemory(userId) {
   const { data } = await supabase
     .from('user_memory')
@@ -474,7 +520,8 @@ export default async function handler(req, res) {
     // ── ACTION: chat ──────────────────────────────────────────────────────
     if (action === 'chat') {
       const { prompt: systemPrompt, maxTokens } = await buildSystemPrompt(userId, messages);
-      const reply = await callClaude(messages, systemPrompt, maxTokens);
+      const rawReply = await callClaude(messages, systemPrompt, maxTokens);
+      const reply = formatReplyForReading(rawReply);
 
       // Extract memory in background (don't await — non-blocking)
       extractAndStoreMemory(userId, messages).catch(console.error);
