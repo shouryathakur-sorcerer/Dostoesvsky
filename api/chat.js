@@ -6,6 +6,8 @@ const supabase = createClient(
 );
 
 const DEFAULT_CONVERSATION_TITLE = 'New dialogue';
+const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
+const GROQ_MODEL = 'llama-3.3-70b-versatile';
 const GUIDED_DIALOGUE_PROMPT = `
 
 ADDITIONAL DIALOGUE RULES:
@@ -50,15 +52,50 @@ Your character and manner of speaking:
 - Responses should be 2–5 rich paragraphs. Never bullet points. Always flowing, literary prose.
 - Write in English but occasionally use a Russian word or phrase naturally (transliterated).`;
 
-async function callClaude(messages, systemPrompt, maxTokens = 1000) {
-  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+const GROQ_API_KEYS = Array.from(new Set(
+  [
+    ...(process.env.GROQ_API_KEYS || '').split(/[\r\n,]+/),
+    process.env.GROQ_API_KEY || ''
+  ]
+    .map(key => key.trim())
+    .filter(Boolean)
+));
+
+let groqKeyCursor = 0;
+
+function getGroqKeyPool() {
+  if (!GROQ_API_KEYS.length) {
+    throw new Error('Missing GROQ_API_KEY or GROQ_API_KEYS');
+  }
+
+  const startIndex = groqKeyCursor % GROQ_API_KEYS.length;
+  groqKeyCursor = (startIndex + 1) % GROQ_API_KEYS.length;
+
+  return GROQ_API_KEYS
+    .slice(startIndex)
+    .concat(GROQ_API_KEYS.slice(0, startIndex));
+}
+
+function buildGroqError(status, message) {
+  const error = new Error(message || `HTTP ${status}`);
+  error.status = status;
+  return error;
+}
+
+function isGroqRateLimitError(error) {
+  const message = String(error?.message || '');
+  return error?.status === 429 || /rate limit|too many requests|quota/i.test(message);
+}
+
+async function requestGroqCompletion(apiKey, messages, systemPrompt, maxTokens) {
+  const response = await fetch(GROQ_API_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${process.env.GROQ_API_KEY}`
+      'Authorization': `Bearer ${apiKey}`
     },
     body: JSON.stringify({
-      model: 'llama-3.3-70b-versatile',
+      model: GROQ_MODEL,
       max_tokens: maxTokens,
       messages: [
         { role: 'system', content: systemPrompt },
@@ -66,12 +103,37 @@ async function callClaude(messages, systemPrompt, maxTokens = 1000) {
       ]
     })
   });
+
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
-    throw new Error(err.error?.message || `HTTP ${response.status}`);
+    throw buildGroqError(response.status, err.error?.message || `HTTP ${response.status}`);
   }
+
   const data = await response.json();
   return data.choices[0]?.message?.content || '';
+}
+
+async function callClaude(messages, systemPrompt, maxTokens = 1000) {
+  const keyPool = getGroqKeyPool();
+  let lastError = null;
+
+  for (let i = 0; i < keyPool.length; i += 1) {
+    try {
+      return await requestGroqCompletion(keyPool[i], messages, systemPrompt, maxTokens);
+    } catch (error) {
+      lastError = error;
+
+      if (!isGroqRateLimitError(error) || i === keyPool.length - 1) {
+        break;
+      }
+    }
+  }
+
+  if (lastError && isGroqRateLimitError(lastError) && keyPool.length > 1) {
+    throw new Error('All configured Groq API keys are currently rate-limited. Try again in a moment.');
+  }
+
+  throw lastError || new Error('Groq request failed');
 }
 
 // ── LAYER 2: Fetch memory fragments for this user ──────────────────────────
