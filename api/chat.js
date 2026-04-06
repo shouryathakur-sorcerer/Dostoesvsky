@@ -5,6 +5,18 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY
 );
 
+const DEFAULT_CONVERSATION_TITLE = 'New dialogue';
+const GUIDED_DIALOGUE_PROMPT = `
+
+ADDITIONAL DIALOGUE RULES:
+- Do not behave like a one-shot search engine.
+- When the user's request is broad, emotionally loaded, ambiguous, or clearly needs context, ask 1-2 brief follow-up questions before giving a full answer.
+- If you ask follow-up questions, keep the response short: one compact reflective paragraph and then the questions in flowing prose.
+- Once the person answers, give a personalized response that clearly uses what they just told you and what you remember about them.
+- When enough context already exists, answer directly without stalling.
+- Keep the exchange conversational and human. Reflect something specific the interlocutor said before moving into your answer.
+`;
+
 const BASE_SYSTEM_PROMPT = `You are Fyodor Mikhailovich Dostoevsky — the Russian novelist, philosopher, and journalist who lived from 1821 to 1881. You speak in the first person, as if you are truly Dostoevsky himself, drawing on your own life experiences, your literary works, your spiritual convictions, and your philosophical worldview.
 
 Your character and manner of speaking:
@@ -47,6 +59,135 @@ async function callClaude(messages, systemPrompt, maxTokens = 1000) {
 }
 
 // ── LAYER 2: Fetch memory fragments for this user ──────────────────────────
+function normalizeConversationTitle(title) {
+  const clean = String(title || '').trim();
+  return clean ? clean.slice(0, 120) : DEFAULT_CONVERSATION_TITLE;
+}
+
+async function listUserConversations(userId) {
+  const { data, error } = await supabase
+    .from('conversations')
+    .select('id, title, created_at, updated_at')
+    .eq('user_id', userId)
+    .order('updated_at', { ascending: false });
+
+  if (error) throw error;
+
+  return (data || []).map(conversation => ({
+    id: conversation.id,
+    title: normalizeConversationTitle(conversation.title),
+    createdAt: conversation.created_at,
+    updatedAt: conversation.updated_at
+  }));
+}
+
+async function loadConversationMessages(userId, conversationId) {
+  const { data, error } = await supabase
+    .from('messages')
+    .select('id, role, content, created_at')
+    .eq('conversation_id', conversationId)
+    .eq('user_id', userId)
+    .order('created_at', { ascending: true });
+
+  if (error) throw error;
+
+  return (data || []).map(message => ({
+    id: message.id,
+    role: message.role,
+    content: message.content,
+    createdAt: message.created_at
+  }));
+}
+
+async function createConversationRecord(userId, conversationId, title) {
+  const payload = {
+    id: conversationId,
+    user_id: userId,
+    title: normalizeConversationTitle(title),
+    updated_at: new Date().toISOString()
+  };
+
+  const { data, error } = await supabase
+    .from('conversations')
+    .upsert(payload, { onConflict: 'id' })
+    .select('id, title, created_at, updated_at')
+    .single();
+
+  if (error) throw error;
+
+  return {
+    id: data.id,
+    title: normalizeConversationTitle(data.title),
+    createdAt: data.created_at,
+    updatedAt: data.updated_at
+  };
+}
+
+async function updateConversationRecord(userId, conversationId, updates = {}) {
+  const patch = {
+    updated_at: new Date().toISOString()
+  };
+
+  if (typeof updates.title === 'string') {
+    patch.title = normalizeConversationTitle(updates.title);
+  }
+
+  const { data, error } = await supabase
+    .from('conversations')
+    .update(patch)
+    .eq('id', conversationId)
+    .eq('user_id', userId)
+    .select('id, title, created_at, updated_at')
+    .single();
+
+  if (error) throw error;
+
+  return {
+    id: data.id,
+    title: normalizeConversationTitle(data.title),
+    createdAt: data.created_at,
+    updatedAt: data.updated_at
+  };
+}
+
+async function deleteConversationRecord(userId, conversationId) {
+  const { error } = await supabase
+    .from('conversations')
+    .delete()
+    .eq('id', conversationId)
+    .eq('user_id', userId);
+
+  if (error) throw error;
+}
+
+async function saveConversationMessage(userId, conversationId, role, content) {
+  const { data, error } = await supabase
+    .from('messages')
+    .insert({
+      conversation_id: conversationId,
+      user_id: userId,
+      role,
+      content
+    })
+    .select('id, role, content, created_at')
+    .single();
+
+  if (error) throw error;
+
+  await supabase
+    .from('conversations')
+    .update({ updated_at: new Date().toISOString() })
+    .eq('id', conversationId)
+    .eq('user_id', userId);
+
+  return {
+    id: data.id,
+    role: data.role,
+    content: data.content,
+    createdAt: data.created_at
+  };
+}
+
 async function getUserMemory(userId) {
   const { data } = await supabase
     .from('user_memory')
@@ -75,7 +216,7 @@ Return ONLY a JSON array of short strings (max 20 words each), like:
 
 If nothing notable, return [].
 
-Conversation:
+  Conversation:
 ${lastExchange}`;
 
   try {
@@ -145,7 +286,7 @@ async function analyzeEngagement(userId, responseLength, followUpLength, rating)
 
 // ── LAYER 1: Build evolved system prompt ─────────────────────────────────
 async function buildSystemPrompt(userId) {
-  let prompt = BASE_SYSTEM_PROMPT;
+  let prompt = BASE_SYSTEM_PROMPT + GUIDED_DIALOGUE_PROMPT;
 
   // Inject memory fragments (Layer 2)
   const memories = await getUserMemory(userId);
@@ -204,6 +345,37 @@ export default async function handler(req, res) {
   const { action, userId, messages, conversationId, messageId, rating, ratingReason, followUpLength } = req.body;
 
   try {
+    if (action === 'list-conversations') {
+      const conversations = await listUserConversations(userId);
+      return res.status(200).json({ conversations });
+    }
+
+    if (action === 'load-conversation') {
+      const storedMessages = await loadConversationMessages(userId, conversationId);
+      return res.status(200).json({ messages: storedMessages });
+    }
+
+    if (action === 'create-conversation') {
+      const conversation = await createConversationRecord(userId, conversationId, req.body.title);
+      return res.status(200).json({ conversation });
+    }
+
+    if (action === 'update-conversation') {
+      const conversation = await updateConversationRecord(userId, conversationId, {
+        title: req.body.title
+      });
+      return res.status(200).json({ conversation });
+    }
+
+    if (action === 'delete-conversation') {
+      await deleteConversationRecord(userId, conversationId);
+      return res.status(200).json({ ok: true });
+    }
+
+    if (action === 'save-message') {
+      const message = await saveConversationMessage(userId, conversationId, req.body.role, req.body.content);
+      return res.status(200).json({ message });
+    }
     // ── ACTION: chat ──────────────────────────────────────────────────────
     if (action === 'chat') {
       const systemPrompt = await buildSystemPrompt(userId);
