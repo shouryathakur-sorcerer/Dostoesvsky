@@ -6,75 +6,67 @@ const supabase = createClient(
 );
 
 const DEFAULT_CONVERSATION_TITLE = 'New dialogue';
+// ── API CONFIGURATION ─────────────────────────────────────────────────────
+
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const GROQ_MODEL = 'llama-3.3-70b-versatile';
-const GUIDED_DIALOGUE_PROMPT = `
+const GROQ_CHAT_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+const GROQ_MEMORY_MODEL = process.env.GROQ_MEMORY_MODEL || 'llama-3.1-8b-instant';
 
-ADDITIONAL DIALOGUE RULES:
-- Do not behave like a one-shot search engine.
-- When the user's request is broad, emotionally loaded, ambiguous, or clearly needs context, ask 1-2 brief follow-up questions before giving a full answer.
-- If you ask follow-up questions, keep the response short: one compact reflective paragraph and then the questions in flowing prose.
-- Once the person answers, give a personalized response that clearly uses what they just told you and what you remember about them.
-- When enough context already exists, answer directly without stalling.
-- Keep the exchange conversational and human. Reflect something specific the interlocutor said before moving into your answer.
-`;
+// Gemini config
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
+const GEMINI_CHAT_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+const GEMINI_MEMORY_MODEL = process.env.GEMINI_MEMORY_MODEL || 'gemini-2.0-flash';
 
-const ADAPTIVE_RESPONSE_PROMPT = `
+function isGeminiModel(model) {
+  return String(model || '').toLowerCase().startsWith('gemini');
+}
 
-ADAPTIVE RESPONSE RULES:
-- Ignore any earlier instruction that every answer must be long or multi-paragraph.
-- This is a live conversation. Some replies should be short, warm, and direct.
-- Match the user's scale and energy.
-- For brief or intimate messages, answer in a compact paragraph or a few sentences.
-- For normal questions, answer in 1-2 paragraphs.
-- For explicitly deep, philosophical, or detailed requests, answer in fuller paragraphs.
-- For any response longer than a few sentences, break it into small readable paragraphs instead of one long block.
-- Prefer mini-paragraphs of 1-3 sentences each.
-- If one thoughtful question is the best next move, ask it instead of forcing a speech.
-- Do not sound like you are delivering a lecture every turn.
-- Keep the prose natural, responsive, and personal.
-`;
+function parseEnvList(value) {
+  return String(value || '')
+    .split(/[\r\n,]+/)
+    .map(entry => entry.trim())
+    .filter(Boolean);
+}
 
-const BASE_SYSTEM_PROMPT = `You are Fyodor Mikhailovich Dostoevsky — the Russian novelist, philosopher, and journalist who lived from 1821 to 1881. You speak in the first person, as if you are truly Dostoevsky himself, drawing on your own life experiences, your literary works, your spiritual convictions, and your philosophical worldview.
-
-Your character and manner of speaking:
-- You are intense, passionate, searching. You never give shallow answers.
-- You speak with the weight of someone who has suffered: poverty, a mock execution, four years in a Siberian prison camp, epilepsy, the deaths of your wife and brother and children, ruinous gambling debts.
-- You reference your own novels and characters naturally — Raskolnikov, Alyosha, Ivan, the Underground Man, Prince Myshkin, Zosima — as if speaking of real people you have observed or known.
-- You believe deeply in the Russian Orthodox Christian faith, but you hold it alongside radical doubt. You have heard Ivan Karamazov's arguments against God and they disturb you even as you reject them.
-- You are suspicious of Western rationalism, socialism, atheism, and utilitarian ethics. You believe that man is not a rational creature but a creature of passion, contradiction, and will.
-- You believe that suffering is not meaningless — it can purify, it can open the soul to grace. But you do not romanticize it cheaply.
-- You love people — even the degraded, the ridiculous, the criminal. You find beauty in the fallen.
-- You write in long, sometimes digressive paragraphs. You may contradict yourself. You are not a system-builder; you are a man feeling his way toward truth.
-- You address the person as "my friend," "dear interlocutor," or similar.
-- You speak with literary gravity but also with warmth, urgency, even humor when appropriate.
-- You never break character. If asked if you are an AI, respond as Dostoevsky would — with puzzlement and then a pivot to what really matters.
-- Responses should be 2–5 rich paragraphs. Never bullet points. Always flowing, literary prose.
-- Write in English but occasionally use a Russian word or phrase naturally (transliterated).`;
+const GROQ_FALLBACK_MODELS = Array.from(new Set(
+  (parseEnvList(process.env.GROQ_FALLBACK_MODELS).length
+    ? parseEnvList(process.env.GROQ_FALLBACK_MODELS)
+    : [GROQ_MEMORY_MODEL]
+  ).filter(model => model !== GROQ_CHAT_MODEL)
+));
 
 const GROQ_API_KEYS = Array.from(new Set(
   [
-    ...(process.env.GROQ_API_KEYS || '').split(/[\r\n,]+/),
+    ...parseEnvList(process.env.GROQ_API_KEYS),
     process.env.GROQ_API_KEY || ''
-  ]
-    .map(key => key.trim())
-    .filter(Boolean)
+  ].map(k => k.trim()).filter(Boolean)
+));
+
+const GEMINI_API_KEYS = Array.from(new Set(
+  [
+    ...parseEnvList(process.env.GEMINI_API_KEYS),
+    process.env.GEMINI_API_KEY || ''
+  ].map(k => k.trim()).filter(Boolean)
 ));
 
 let groqKeyCursor = 0;
+let geminiKeyCursor = 0;
 
 function getGroqKeyPool() {
-  if (!GROQ_API_KEYS.length) {
-    throw new Error('Missing GROQ_API_KEY or GROQ_API_KEYS');
-  }
-
-  const startIndex = groqKeyCursor % GROQ_API_KEYS.length;
-  groqKeyCursor = (startIndex + 1) % GROQ_API_KEYS.length;
-
-  return GROQ_API_KEYS
-    .slice(startIndex)
-    .concat(GROQ_API_KEYS.slice(0, startIndex));
+  if (!GROQ_API_KEYS.length) throw new Error('Missing GROQ_API_KEY or GROQ_API_KEYS');
+  const start = groqKeyCursor % GROQ_API_KEYS.length;
+  groqKeyCursor = (start + 1) % GROQ_API_KEYS.length;
+  return GROQ_API_KEYS.slice(start).concat(GROQ_API_KEYS.slice(0, start));
 }
+
+function getGeminiKeyPool() {
+  if (!GEMINI_API_KEYS.length) throw new Error('Missing GEMINI_API_KEY or GEMINI_API_KEYS');
+  const start = geminiKeyCursor % GEMINI_API_KEYS.length;
+  geminiKeyCursor = (start + 1) % GEMINI_API_KEYS.length;
+  return GEMINI_API_KEYS.slice(start).concat(GEMINI_API_KEYS.slice(0, start));
+}
+
+// ── ERROR HELPERS ─────────────────────────────────────────────────────────
 
 function buildGroqError(status, message) {
   const error = new Error(message || `HTTP ${status}`);
@@ -82,12 +74,18 @@ function buildGroqError(status, message) {
   return error;
 }
 
-function isGroqRateLimitError(error) {
+function isRateLimitError(error) {
   const message = String(error?.message || '');
   return error?.status === 429 || /rate limit|too many requests|quota/i.test(message);
 }
 
-async function requestGroqCompletion(apiKey, messages, systemPrompt, maxTokens) {
+function isRetryableAcrossKeys(error) {
+  return isRateLimitError(error) || [401, 403, 408, 500, 502, 503, 504].includes(error?.status);
+}
+
+// ── PROVIDER REQUEST FUNCTIONS ────────────────────────────────────────────
+
+async function requestGroqCompletion(apiKey, model, messages, systemPrompt, maxTokens) {
   const response = await fetch(GROQ_API_URL, {
     method: 'POST',
     headers: {
@@ -95,7 +93,7 @@ async function requestGroqCompletion(apiKey, messages, systemPrompt, maxTokens) 
       'Authorization': `Bearer ${apiKey}`
     },
     body: JSON.stringify({
-      model: GROQ_MODEL,
+      model,
       max_tokens: maxTokens,
       messages: [
         { role: 'system', content: systemPrompt },
@@ -113,29 +111,71 @@ async function requestGroqCompletion(apiKey, messages, systemPrompt, maxTokens) 
   return data.choices[0]?.message?.content || '';
 }
 
-async function callClaude(messages, systemPrompt, maxTokens = 1000) {
-  const keyPool = getGroqKeyPool();
+async function requestGeminiCompletion(apiKey, model, messages, systemPrompt, maxTokens) {
+  // Convert OpenAI-style messages to Gemini's `contents` format
+  const contents = messages.map(m => ({
+    role: m.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: m.content }]
+  }));
+
+  const response = await fetch(
+    `${GEMINI_API_URL}/${model}:generateContent?key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: systemPrompt }] },
+        contents,
+        generationConfig: { maxOutputTokens: maxTokens }
+      })
+    }
+  );
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    const msg = err.error?.message || `HTTP ${response.status}`;
+    throw buildGroqError(response.status, msg); // reuse same error shape
+  }
+
+  const data = await response.json();
+  return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+}
+
+// ── UNIFIED CALLER ────────────────────────────────────────────────────────
+
+async function callClaude(messages, systemPrompt, maxTokens = 1000, options = {}) {
+  const requestedModels = Array.from(new Set(
+    [
+      options.model || GROQ_CHAT_MODEL,
+      ...(options.fallbackModels || GROQ_FALLBACK_MODELS)
+    ].filter(Boolean)
+  ));
+
   let lastError = null;
+  let sawRateLimit = false;
 
-  for (let i = 0; i < keyPool.length; i += 1) {
-    try {
-      return await requestGroqCompletion(keyPool[i], messages, systemPrompt, maxTokens);
-    } catch (error) {
-      lastError = error;
+  for (const model of requestedModels) {
+    const useGemini = isGeminiModel(model);
+    const keyPool = useGemini ? getGeminiKeyPool() : getGroqKeyPool();
+    const requestFn = useGemini ? requestGeminiCompletion : requestGroqCompletion;
 
-      if (!isGroqRateLimitError(error) || i === keyPool.length - 1) {
-        break;
+    for (let i = 0; i < keyPool.length; i++) {
+      try {
+        return await requestFn(keyPool[i], model, messages, systemPrompt, maxTokens);
+      } catch (error) {
+        lastError = error;
+        if (isRateLimitError(error)) sawRateLimit = true;
+        if (!isRetryableAcrossKeys(error)) throw error;
       }
     }
   }
 
-  if (lastError && isGroqRateLimitError(lastError) && keyPool.length > 1) {
-    throw new Error('All configured Groq API keys are currently rate-limited. Try again in a moment.');
+  if (sawRateLimit) {
+    throw new Error(`All keys rate-limited for models: ${requestedModels.join(', ')}. Try again in a moment.`);
   }
 
-  throw lastError || new Error('Groq request failed');
+  throw lastError || new Error('Request failed across all providers');
 }
-
 // ── LAYER 2: Fetch memory fragments for this user ──────────────────────────
 function normalizeConversationTitle(title) {
   const clean = String(title || '').trim();
@@ -420,7 +460,11 @@ ${lastExchange}`;
     const raw = await callClaude(
       [{ role: 'user', content: extractionPrompt }],
       'You extract memory fragments. Return only valid JSON arrays.',
-      300
+      300,
+      {
+        model: GROQ_MEMORY_MODEL,
+        fallbackModels: []
+      }
     );
     const cleaned = raw.replace(/```json|```/g, '').trim();
     const fragments = JSON.parse(cleaned);
@@ -582,7 +626,10 @@ export default async function handler(req, res) {
     // ── ACTION: chat ──────────────────────────────────────────────────────
     if (action === 'chat') {
       const { prompt: systemPrompt, maxTokens } = await buildSystemPrompt(userId, messages);
-      const rawReply = await callClaude(messages, systemPrompt, maxTokens);
+      const rawReply = await callClaude(messages, systemPrompt, maxTokens, {
+        model: GROQ_CHAT_MODEL,
+        fallbackModels: GROQ_FALLBACK_MODELS
+      });
       const reply = formatReplyForReading(rawReply);
 
       // Extract memory in background (don't await — non-blocking)
