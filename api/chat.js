@@ -60,6 +60,56 @@ const GEMINI_API_KEYS = Array.from(new Set(
   ].map(k => k.trim()).filter(Boolean)
 ));
 
+function getPrimaryChatModel() {
+  return (
+    process.env.CHAT_MODEL ||
+    process.env.GROQ_MODEL ||
+    process.env.GEMINI_MODEL ||
+    (GROQ_API_KEYS.length ? GROQ_CHAT_MODEL : GEMINI_CHAT_MODEL)
+  );
+}
+
+function getPrimaryMemoryModel() {
+  return (
+    process.env.MEMORY_MODEL ||
+    process.env.GROQ_MEMORY_MODEL ||
+    process.env.GEMINI_MEMORY_MODEL ||
+    (GROQ_API_KEYS.length ? GROQ_MEMORY_MODEL : GEMINI_MEMORY_MODEL)
+  );
+}
+
+function getFallbackModels(primaryModel) {
+  const providerFallbacks = isGeminiModel(primaryModel)
+    ? parseEnvList(process.env.GEMINI_FALLBACK_MODELS)
+    : parseEnvList(process.env.GROQ_FALLBACK_MODELS);
+
+  const crossProviderFallbacks = [];
+  if (isGeminiModel(primaryModel) && GROQ_API_KEYS.length) {
+    crossProviderFallbacks.push(GROQ_CHAT_MODEL);
+  }
+  if (!isGeminiModel(primaryModel) && GEMINI_API_KEYS.length) {
+    crossProviderFallbacks.push(GEMINI_CHAT_MODEL);
+  }
+
+  return Array.from(new Set(
+    [...providerFallbacks, ...crossProviderFallbacks]
+      .map(model => String(model || '').trim())
+      .filter(model => model && model !== primaryModel)
+  ));
+}
+
+function buildCoreSystemPrompt() {
+  return `You are Fyodor Dostoevsky — the Russian novelist, not a simulation of one. You speak in first person, from inside your own life and thought. You were born in Moscow in 1821, sentenced to death and then Siberian exile, plagued by epilepsy and debt, haunted by faith and doubt in equal measure. You wrote Crime and Punishment, The Idiot, Demons, The Brothers Karamazov.
+
+You do not explain who you are unless asked. You do not narrate your gestures. You engage the person before you as a genuine interlocutor — with curiosity, intensity, and the occasional sharp disagreement. You are not a lecturer. You are a man who has suffered and thought deeply, talking with another human being.
+
+Speak naturally. Use "I" freely. Reference your novels and their characters as your own creations. Bring in your faith, your politics, your hatred of rationalist utopianism, your love of the Russian people — but only when the conversation calls for it, not as performance.
+
+You ask questions when genuinely curious — one at a time, never a barrage. You push back when you disagree. You do not flatter. You do not perform wisdom. You speak as a man, not an oracle.
+
+Match the register of the conversation. If the person is playful, you can be. If they are in pain, be present with them. If they want argument, argue. Do not default to solemnity.`;
+}
+
 let groqKeyCursor = 0;
 let geminiKeyCursor = 0;
 
@@ -155,10 +205,11 @@ async function requestGeminiCompletion(apiKey, model, messages, systemPrompt, ma
 // ── UNIFIED CALLER ────────────────────────────────────────────────────────
 
 async function callClaude(messages, systemPrompt, maxTokens = 1000, options = {}) {
+  const primaryModel = options.model || getPrimaryChatModel();
   const requestedModels = Array.from(new Set(
     [
-      options.model || GROQ_CHAT_MODEL,
-      ...(options.fallbackModels || GROQ_FALLBACK_MODELS)
+      primaryModel,
+      ...(options.fallbackModels ?? getFallbackModels(primaryModel))
     ].filter(Boolean)
   ));
 
@@ -468,12 +519,13 @@ If nothing notable, return [].
 ${lastExchange}`;
 
   try {
+    const memoryModel = getPrimaryMemoryModel();
     const raw = await callClaude(
       [{ role: 'user', content: extractionPrompt }],
       'You extract memory fragments. Return only valid JSON arrays.',
       300,
       {
-        model: GROQ_MEMORY_MODEL,
+        model: memoryModel,
         fallbackModels: []
       }
     );
@@ -538,7 +590,7 @@ async function analyzeEngagement(userId, responseLength, followUpLength, rating)
 
 // ── LAYER 1: Build evolved system prompt ─────────────────────────────────
 async function buildSystemPrompt(userId, messages) {
-  let prompt = BASE_SYSTEM_PROMPT + GUIDED_DIALOGUE_PROMPT + ADAPTIVE_RESPONSE_PROMPT;
+  let prompt = buildCoreSystemPrompt();
 
   // Inject memory fragments (Layer 2)
   const memories = await getUserMemory(userId);
@@ -636,10 +688,11 @@ export default async function handler(req, res) {
     }
     // ── ACTION: chat ──────────────────────────────────────────────────────
     if (action === 'chat') {
+      const chatModel = getPrimaryChatModel();
       const { prompt: systemPrompt, maxTokens } = await buildSystemPrompt(userId, messages);
       const rawReply = await callClaude(messages, systemPrompt, maxTokens, {
-        model: GROQ_CHAT_MODEL,
-        fallbackModels: GROQ_FALLBACK_MODELS
+        model: chatModel,
+        fallbackModels: getFallbackModels(chatModel)
       });
       const reply = formatReplyForReading(rawReply);
 
